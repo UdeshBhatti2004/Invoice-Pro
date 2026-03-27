@@ -36,7 +36,8 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin: "*",
+    origin: "https://invoice-pro-delta.vercel.app",
+    credentials: true,
   })
 );
 

@@ -1,11 +1,6 @@
 import { Worker } from "bullmq";
 import { sendEmailReminder } from "../controllers/AiControllers.js";
-import Redis from "ioredis";
-
-const redisConnection = new Redis(process.env.REDIS_URL, {
-  maxRetriesPerRequest: null,
-  tls: {},
-});
+import redisConnection from "../config/redis.js";
 
 const emailWorker = new Worker(
   "emailQueue",

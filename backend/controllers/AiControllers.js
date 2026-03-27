@@ -273,33 +273,29 @@ const startEmailWorker = async () => {
     const worker = new Worker(
       "emailQueue",
       async (job) => {
-        console.log(` Processing job for: ${job.data.clientName}`);
+        console.log(`Processing job for: ${job.data.clientName}`);
         await sendEmailReminder(job.data);
-        console.log(` Finished job for: ${job.data.clientName}`);
+        console.log(`Finished job for: ${job.data.clientName}`);
       },
       {
-        connection: {
-          host: "127.0.0.1",
-          port: 6379,
-        },
-      },
+        connection: redisConnection,
+      }
     );
 
     worker.on("completed", (job) => {
-      console.log(` Email sent successfully to: ${job.data.clientName}`);
+      console.log(`Email sent successfully to: ${job.data.clientName}`);
     });
 
     worker.on("failed", (job, err) => {
       console.error(
-        ` Failed to send email to ${job.data.clientName}: ${err.message}`,
+        `Failed to send email to ${job.data.clientName}: ${err.message}`
       );
     });
 
-    console.log(" BullMQ Email Worker is running within backend process");
+    console.log("BullMQ Email Worker is running within backend process");
   } catch (err) {
-    console.error(" Failed to start internal worker:", err);
+    console.error("Failed to start internal worker:", err);
   }
 };
-
 
 startEmailWorker();

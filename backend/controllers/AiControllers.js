@@ -1,37 +1,21 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import Invoice from "../models/Invoice.js";
 import dotenv from "dotenv";
-import nodemailer from "nodemailer";
 import { Queue, Worker } from "bullmq";
 import redisConnection from "../config/redis.js";
+import { Resend } from "resend";
 
 dotenv.config();
 
-
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-
-transporter.verify((err) => {
-  if (err) console.error("Transporter config error:", err);
-  else console.log("Email transporter ready");
-});
-
+const resend = new Resend(process.env.RESEND_API_KEY);
 const emailQueue = new Queue("emailQueue", { connection: redisConnection });
 
 export async function sendEmailReminder(invoice) {
   const { clientName, clientEmail, amount, dueDate, status, createdBy } = invoice;
 
   const businessName = createdBy?.companyName || createdBy?.name || "Your Company";
-  
+
   if (!clientEmail) {
     console.log(`No email for ${clientName}, skipping.`);
     return;
@@ -48,23 +32,26 @@ export async function sendEmailReminder(invoice) {
          Do NOT use placeholders or bracket text.
          End the email with: Regards, ${businessName}`;
 
-
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const result = await model.generateContent(prompt);
   const emailBody = result.response.text();
 
-  const mailOptions = {
-    from: `"Invoice App" <${process.env.EMAIL_USER}>`,
+  const { data, error } = await resend.emails.send({
+    from: `Invoice App <${process.env.EMAIL_USER}>`,
     to: clientEmail,
-    subject: status === "Paid"
-      ? `Thank you for your payment, ${clientName}!`
-      : `Payment Reminder: ₹${amount} due on ${dueDate}`,
+    subject:
+      status === "Paid"
+        ? `Thank you for your payment, ${clientName}!`
+        : `Payment Reminder: ₹${amount} due on ${dueDate}`,
     text: emailBody,
-  };
+  });
 
+  if (error) {
+    console.error(`Failed to send email to ${clientEmail}:`, error);
+    throw new Error(error.message);
+  }
 
-  const info = await transporter.sendMail(mailOptions);
-  console.log(`Email sent to ${clientEmail} — ID: ${info.messageId}`);
+  console.log(`Email sent to ${clientEmail} — ID: ${data.id}`);
 }
 
 export const createInvoiceWithAI = async (req, res) => {
@@ -73,15 +60,11 @@ export const createInvoiceWithAI = async (req, res) => {
     const userId = req.user.id;
 
     if (!prompt) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Prompt is required" });
+      return res.status(400).json({ success: false, message: "Prompt is required" });
     }
 
     if (!clientEmail) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Client email is required" });
+      return res.status(400).json({ success: false, message: "Client email is required" });
     }
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
@@ -124,21 +107,17 @@ export const createInvoiceWithAI = async (req, res) => {
     const jsonString = text.slice(jsonStart, jsonEnd);
     const invoices = JSON.parse(jsonString);
 
-    
     const invoiceArray = Array.isArray(invoices) ? invoices : [invoices];
 
-    
     const today = new Date();
     const maxDate = new Date();
     maxDate.setDate(today.getDate() + 30);
 
-    
     const preparedInvoices = invoiceArray.map((inv) => {
       let due = new Date(inv.dueDate);
 
-      
       if (isNaN(due.getTime()) || due < today || due > maxDate) {
-        due = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000); 
+        due = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
       }
 
       return {
@@ -150,7 +129,6 @@ export const createInvoiceWithAI = async (req, res) => {
       };
     });
 
-    
     const savedInvoices = await Invoice.insertMany(preparedInvoices);
 
     return res.status(201).json({
@@ -159,7 +137,7 @@ export const createInvoiceWithAI = async (req, res) => {
       invoices: savedInvoices,
     });
   } catch (error) {
-    console.error(" AI Invoice Creation Error:", error);
+    console.error("AI Invoice Creation Error:", error);
     res.status(500).json({
       success: false,
       message: "Error generating invoices with AI",
@@ -167,7 +145,6 @@ export const createInvoiceWithAI = async (req, res) => {
     });
   }
 };
-
 
 export const generateReminderEmail = async (req, res) => {
   try {
@@ -178,27 +155,20 @@ export const generateReminderEmail = async (req, res) => {
       return res.status(404).json({ message: "Invoice not found" });
     }
 
-    
     await emailQueue.add("sendEmail", invoice);
-    console.log(`📬 Enqueued single reminder for: ${invoice.clientName}`);
+    console.log(` Enqueued single reminder for: ${invoice.clientName}`);
 
-    res.json({
-      success: true,
-      message: "Reminder email enqueued successfully.",
-    });
+    res.json({ success: true, message: "Reminder email enqueued successfully." });
   } catch (error) {
-    console.error(" generateReminderEmail error:", error);
+    console.error("generateReminderEmail error:", error);
     res.status(500).json({ message: "Error sending reminder" });
   }
 };
 
-
-
-
 export const generateAllReminders = async (req, res) => {
   try {
-    console.log(" Generating all reminders and thank-you emails...");
-    
+    console.log("Generating all reminders and thank-you emails...");
+
     const invoices = await Invoice.find({
       status: { $in: ["Pending", "Paid"] },
     }).populate("createdBy");
@@ -210,13 +180,13 @@ export const generateAllReminders = async (req, res) => {
       await emailQueue.add("sendEmail", invoice);
     }
 
-    console.log(` Enqueued ${invoices.length} jobs (reminders + thank-you)`);
+    console.log(`Enqueued ${invoices.length} jobs (reminders + thank-you)`);
     res.json({
       success: true,
       message: `${invoices.length} emails (reminders + thank-you) enqueued successfully.`,
     });
   } catch (error) {
-    console.error(" Error generating all reminders:", error);
+    console.error("Error generating all reminders:", error);
     res.status(500).json({
       success: false,
       message: "Failed to enqueue reminder emails.",
@@ -225,14 +195,9 @@ export const generateAllReminders = async (req, res) => {
   }
 };
 
-
-
-
 export const getAIDashboardInsights = async (req, res) => {
   try {
-    const invoices = await Invoice.find({ createdBy: req.user.id }).sort({
-      createdAt: -1,
-    });
+    const invoices = await Invoice.find({ createdBy: req.user.id }).sort({ createdAt: -1 });
     const recentInvoices = invoices.slice(0, 5);
 
     const totalInvoices = invoices.length;
@@ -259,7 +224,7 @@ export const getAIDashboardInsights = async (req, res) => {
     res.json({
       stats: { totalInvoices, totalAmount, paid, unpaid },
       insight: insight.trim(),
-      recentInvoices, 
+      recentInvoices,
     });
   } catch (error) {
     console.error("getAIDashboardInsights error:", error);
@@ -279,9 +244,7 @@ const startEmailWorker = async () => {
         await sendEmailReminder(job.data);
         console.log(`Finished job for: ${job.data.clientName}`);
       },
-      {
-        connection: redisConnection,
-      }
+      { connection: redisConnection }
     );
 
     worker.on("completed", (job) => {
@@ -289,9 +252,7 @@ const startEmailWorker = async () => {
     });
 
     worker.on("failed", (job, err) => {
-      console.error(
-        `Failed to send email to ${job.data.clientName}: ${err.message}`
-      );
+      console.error(`Failed to send email to ${job.data.clientName}: ${err.message}`);
     });
 
     console.log("BullMQ Email Worker is running within backend process");

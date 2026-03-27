@@ -7,6 +7,7 @@ import {
 } from "../controllers/AiControllers.js";
 import authMiddlware from "../middleware/AuthMiddleware.js";
 
+
 const router = express.Router();
 
 router.use(authMiddlware);

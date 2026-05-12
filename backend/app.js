@@ -1,7 +1,3 @@
-import dns from "dns";
-dns.setDefaultResultOrder("ipv4first");
-dns.setServers(["8.8.8.8", "8.8.4.4"]);
-
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -13,6 +9,8 @@ import dashboardRoutes from "./routes/DashboardRoutes.js";
 import aiRoutes from "./routes/AiRoutes.js";
 import clientRoute from "./routes/ClientRoute.js";
 import "./worker/reminderWorker.js";
+import cron from "node-cron";
+
 
 dotenv.config();
 
@@ -21,6 +19,15 @@ const PORT = process.env.PORT || 8080;
 
 
 connectDB();
+
+cron.schedule('0 0 */10 * *', async () => {
+  try {
+    await redisClient.ping();
+    console.log('✓ Redis kept alive');
+  } catch (e) {
+    console.error('Redis ping failed:', e);
+  }
+});
 
 redisClient.on("connect", () => {
   console.log("Redis connected");

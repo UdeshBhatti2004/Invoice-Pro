@@ -11,6 +11,7 @@ const emailWorker = new Worker(
   },
   {
     connection: redisConnection,
+    skipVerSionCheck: true,
   }
 );
 

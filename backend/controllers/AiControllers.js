@@ -244,9 +244,7 @@ const startEmailWorker = async () => {
         await sendEmailReminder(job.data);
         console.log(`Finished job for: ${job.data.clientName}`);
       },
-      { connection: redisConnection,
-        skipVersionCheck: true,
-       }
+      { connection: redisConnection, }
     );
 
     worker.on("completed", (job) => {

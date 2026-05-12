@@ -8,7 +8,6 @@ import invoiceRoutes from "./routes/InvoiceRoutes.js";
 import dashboardRoutes from "./routes/DashboardRoutes.js";
 import aiRoutes from "./routes/AiRoutes.js";
 import clientRoute from "./routes/ClientRoute.js";
-import "./worker/reminderWorker.js";
 import cron from "node-cron";
 
 
